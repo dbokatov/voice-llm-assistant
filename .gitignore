@@ -1,0 +1,9 @@
+/node_modules
+/.next
+/out
+/.DS_Store
+*.tsbuildinfo
+
+# Real API keys must stay local. The safe example file is committed.
+.env*
+!.env.example
