@@ -5,6 +5,7 @@ import {
   demoDisabledResponse,
   isDemoEnabled,
 } from "../_shared/demo-access";
+import { getProviderApiKey } from "../_shared/provider-secrets";
 
 export const runtime = "nodejs";
 
@@ -218,16 +219,6 @@ function validateChatRequest(value: unknown): ChatRequest {
   return request as ChatRequest;
 }
 
-function readApiKey(name: "OPENAI_API_KEY" | "GEMINI_API_KEY"): string {
-  const value = process.env[name];
-
-  if (!value || value.startsWith("replace-with-")) {
-    throw new Error(`${name} is not configured in .env.local`);
-  }
-
-  return value;
-}
-
 // -----------------------------------------------------------------------------
 // SECTION 4: Convert our events into Server-Sent Events
 // -----------------------------------------------------------------------------
@@ -255,7 +246,7 @@ async function streamOpenAi(
   signal: AbortSignal,
 ): Promise<void> {
   const client = new OpenAI({
-    apiKey: readApiKey("OPENAI_API_KEY"),
+    apiKey: await getProviderApiKey("OPENAI_API_KEY"),
   });
 
   const stream = await client.responses.create(
@@ -386,7 +377,7 @@ async function streamGemini(
   signal: AbortSignal,
 ): Promise<void> {
   const client = new GoogleGenAI({
-    apiKey: readApiKey("GEMINI_API_KEY"),
+    apiKey: await getProviderApiKey("GEMINI_API_KEY"),
   });
 
   const stream = await client.models.generateContentStream({
@@ -509,7 +500,7 @@ function createChatStream(
 
         send({
           type: "error",
-          message,
+          message: "The selected LLM request failed.",
         });
       } finally {
         requestSignal.removeEventListener("abort", abortProvider);
@@ -574,13 +565,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "The chat request could not be processed.",
+        error: "The chat request could not be processed.",
       },
       {
         status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
       },
     );
   }

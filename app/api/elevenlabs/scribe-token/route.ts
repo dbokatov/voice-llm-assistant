@@ -4,6 +4,7 @@ import {
   demoDisabledResponse,
   isDemoEnabled,
 } from "../../_shared/demo-access";
+import { getProviderApiKey } from "../../_shared/provider-secrets";
 
 export const runtime = "nodejs";
 
@@ -13,16 +14,6 @@ export const runtime = "nodejs";
 // The browser must never receive ELEVENLABS_API_KEY. It asks this server route
 // for a short-lived, single-use Realtime Scribe token instead.
 
-function readElevenLabsApiKey(): string {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-
-  if (!apiKey || apiKey.startsWith("replace-with-")) {
-    throw new Error("ELEVENLABS_API_KEY is not configured in .env");
-  }
-
-  return apiKey;
-}
-
 export async function POST() {
   if (!isDemoEnabled()) {
     return demoDisabledResponse();
@@ -30,7 +21,7 @@ export async function POST() {
 
   try {
     const client = new ElevenLabsClient({
-      apiKey: readElevenLabsApiKey(),
+      apiKey: await getProviderApiKey("ELEVENLABS_API_KEY"),
     });
 
     const response = await client.tokens.singleUse.create("realtime_scribe");
@@ -54,10 +45,13 @@ export async function POST() {
 
     return NextResponse.json(
       {
-        error: message,
+        error: "The Realtime Scribe token could not be created.",
       },
       {
         status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
       },
     );
   }

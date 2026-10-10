@@ -4,6 +4,7 @@ import {
   demoDisabledResponse,
   isDemoEnabled,
 } from "../../_shared/demo-access";
+import { getProviderApiKey } from "../../_shared/provider-secrets";
 
 export const runtime = "nodejs";
 
@@ -16,16 +17,6 @@ export const runtime = "nodejs";
 const DEFAULT_VOICE_ID = "OYTbf65OHHFELVut7v2H";
 const DEFAULT_TTS_MODEL = "eleven_flash_v2_5";
 
-function readElevenLabsApiKey(): string {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-
-  if (!apiKey || apiKey.startsWith("replace-with-")) {
-    throw new Error("ELEVENLABS_API_KEY is not configured in .env");
-  }
-
-  return apiKey;
-}
-
 export async function POST() {
   if (!isDemoEnabled()) {
     return demoDisabledResponse();
@@ -33,7 +24,7 @@ export async function POST() {
 
   try {
     const client = new ElevenLabsClient({
-      apiKey: readElevenLabsApiKey(),
+      apiKey: await getProviderApiKey("ELEVENLABS_API_KEY"),
     });
 
     const response = await client.tokens.singleUse.create("tts_websocket");
@@ -61,6 +52,14 @@ export async function POST() {
 
     console.error("[tts-token] failed", { message });
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "The ElevenLabs TTS token could not be created." },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   }
 }
