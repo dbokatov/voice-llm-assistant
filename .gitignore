@@ -1,7 +1,10 @@
 /node_modules
 /.next
 /out
+/.aws-sam
+/coverage
 /.DS_Store
+*.log
 *.tsbuildinfo
 
 # Real API keys must stay local. The safe example file is committed.

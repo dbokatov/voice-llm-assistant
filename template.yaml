@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless AWS stack for the Voice Learning Coach demo
+
+Parameters:
+  ProviderSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret containing the provider API keys
+
+  DemoEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Central kill switch for routes that consume provider quota
+
+Resources:
+  VoiceCoachFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: nodejs24-v1
+    Properties:
+      PackageType: Image
+      Architectures:
+        - x86_64
+      MemorySize: 1024
+      Timeout: 60
+      EphemeralStorage:
+        Size: 512
+      ReservedConcurrentExecutions: 2
+
+      FunctionUrlConfig:
+        AuthType: AWS_IAM
+        InvokeMode: RESPONSE_STREAM
+
+      Environment:
+        Variables:
+          DEMO_ENABLED: !Ref DemoEnabled
+          PROVIDER_SECRET_ARN: !Ref ProviderSecretArn
+          OPENAI_MODEL: gpt-5-nano
+          GEMINI_MODEL: gemini-3.5-flash-lite
+          ELEVENLABS_VOICE_ID: OYTbf65OHHFELVut7v2H
+          ELEVENLABS_TTS_MODEL: eleven_flash_v2_5
+
+      Policies:
+        - Statement:
+            - Sid: ReadProviderApiKeys
+              Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref ProviderSecretArn
+
+      Tags:
+        Application: voice-learning-coach
+        Environment: production
+
+  VoiceCoachLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${VoiceCoachFunction}
+      RetentionInDays: 7
+
+  VoiceCoachOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-lambda-oac
+        Description: Signs CloudFront requests sent to the private Lambda URL
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  VoiceCoachDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: Voice Learning Coach public endpoint
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+
+        Origins:
+          - Id: VoiceCoachLambdaUrlOrigin
+            DomainName: !Select
+              - 2
+              - !Split
+                - "/"
+                - !GetAtt VoiceCoachFunctionUrl.FunctionUrl
+            OriginAccessControlId: !GetAtt VoiceCoachOriginAccessControl.Id
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginReadTimeout: 60
+              OriginSSLProtocols:
+                - TLSv1.2
+
+        DefaultCacheBehavior:
+          TargetOriginId: VoiceCoachLambdaUrlOrigin
+          ViewerProtocolPolicy: redirect-to-https
+
+          AllowedMethods:
+            - DELETE
+            - GET
+            - HEAD
+            - OPTIONS
+            - PATCH
+            - POST
+            - PUT
+
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          Compress: false
+
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  AllowCloudFrontInvokeFunctionUrl:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !GetAtt VoiceCoachFunction.Arn
+      FunctionUrlAuthType: AWS_IAM
+      Principal: cloudfront.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${VoiceCoachDistribution}
+
+  AllowCloudFrontInvokeFunction:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt VoiceCoachFunction.Arn
+      InvokedViaFunctionUrl: true
+      Principal: cloudfront.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${VoiceCoachDistribution}
+
+Outputs:
+  ApplicationUrl:
+    Description: Public CloudFront URL for the application
+    Value: !Sub https://${VoiceCoachDistribution.DomainName}
+
+  DistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref VoiceCoachDistribution
+
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref VoiceCoachFunction

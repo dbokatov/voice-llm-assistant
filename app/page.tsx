@@ -97,6 +97,40 @@ function formatMessageTime(timestamp: string) {
   });
 }
 
+// CloudFront signs requests to the private Lambda Function URL. For POST
+// requests, Lambda requires this SHA-256 payload header so CloudFront can sign
+// the exact body it forwards. The same helper also works during local testing.
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+type HashedPostOptions = Omit<RequestInit, "method" | "body" | "headers"> & {
+  body?: string;
+  headers?: HeadersInit;
+};
+
+async function postWithPayloadHash(
+  url: string,
+  options: HashedPostOptions = {},
+): Promise<Response> {
+  const { body = "", headers: initialHeaders, ...requestOptions } = options;
+  const headers = new Headers(initialHeaders);
+
+  headers.set("x-amz-content-sha256", await sha256Hex(body));
+
+  return fetch(url, {
+    ...requestOptions,
+    method: "POST",
+    headers,
+    body: body || undefined,
+  });
+}
+
 /* ========================================================================== */
 /* SECTION 2: TEXT CHAT PAGE                                                   */
 /* ========================================================================== */
@@ -283,9 +317,9 @@ export default function HomePage() {
 
       // Ask our server for a temporary token. The permanent API key remains
       // on the server and is never included in this browser bundle.
-      const response = await fetch("/api/elevenlabs/scribe-token", {
-        method: "POST",
-      });
+      const response = await postWithPayloadHash(
+        "/api/elevenlabs/scribe-token",
+      );
 
       const data = (await response.json()) as {
         token?: string;
@@ -493,9 +527,9 @@ export default function HomePage() {
     try {
       await audioContext.resume();
 
-      const tokenResponse = await fetch("/api/elevenlabs/tts-token", {
-        method: "POST",
-      });
+      const tokenResponse = await postWithPayloadHash(
+        "/api/elevenlabs/tts-token",
+      );
       const tokenData = (await tokenResponse.json()) as {
         token?: string;
         voiceId?: string;
@@ -859,16 +893,17 @@ export default function HomePage() {
         inputMode === "voice" && alreadyInterrupted,
       );
 
-      const response = await fetch("/api/chat", {
-        method: "POST",
+      const requestBody = JSON.stringify({
+        provider: selectedProvider,
+        messages: conversationForApi,
+      });
+
+      const response = await postWithPayloadHash("/api/chat", {
         headers: {
           "Content-Type": "application/json",
           Accept: "text/event-stream",
         },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          messages: conversationForApi,
-        }),
+        body: requestBody,
         signal: chatAbortController.signal,
       });
 
