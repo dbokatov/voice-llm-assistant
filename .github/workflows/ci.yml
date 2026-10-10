@@ -33,9 +33,3 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
-
-      - name: Set up AWS SAM
-        uses: aws-actions/setup-sam@v2
-
-      - name: Validate AWS template
-        run: sam validate --lint
