@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # STAGE 1: Install dependencies
 # -----------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS dependencies
+FROM node:26-bookworm-slim AS dependencies
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN npm ci
 # -----------------------------------------------------------------------------
 # STAGE 2: Build Next.js
 # -----------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS builder
+FROM node:26-bookworm-slim AS builder
 
 WORKDIR /app
 
